@@ -24,6 +24,10 @@ interface VatLike {
     function suck(address,address,uint256) external;
 }
 
+interface GemLike {
+
+}
+
 contract DssRwaEsSettler {
     // --- Auth ---
     mapping (address => uint) public wards;
@@ -37,24 +41,27 @@ contract DssRwaEsSettler {
     // --- Data ---
     mapping (address => uint256) public pie;  // Normalised Savings Dai [wad]
 
-    uint256 public Pie;   // Total Normalised Savings Dai  [wad]
-    uint256 public dsr;   // The Dai Savings Rate          [ray]
-    uint256 public chi;   // The Rate Accumulator          [ray]
-
-    VatLike public vat;   // CDP Engine
-    address public vow;   // Debt Engine
+    uint256 public art;   // Normalized Debt [wad]
+    uint256 public duty;  // Collateral-specific, per-second stability fee contribution [ray]
+    uint256 public rate;  // Accumulated Rates     [ray]
     uint256 public rho;   // Time of last drip     [unix epoch time]
 
     uint256 public live;  // Active Flag
+    GemLike public rwa; // RWA token
+    GemLike public sta; // Stablecoin used for repayment
+
+    
 
     // --- Init ---
-    constructor(address vat_) public {
+    constructor(uint256 _art, uint _duty GemLike _rwa, GemLike _sta) {
         wards[msg.sender] = 1;
-        vat = VatLike(vat_);
-        dsr = ONE;
-        chi = ONE;
+        art = _art;
+        duty = _duty;
+        rate = ONE;
         rho = block.timestamp;
         live = 1;
+        rwa = _rwa;
+        sta = _sta;
     }
 
     // --- Math ---
@@ -108,8 +115,8 @@ contract DssRwaEsSettler {
     }
 
     function file(bytes32 what, address addr) external auth {
-        if (what == "vow") vow = addr;
-        else revert("Pot/file-unrecognized-param");
+    //    if (what == "vow") vow = addr;
+    //    else revert("Pot/file-unrecognized-param");
     }
 
     function cage() external auth {
@@ -117,28 +124,40 @@ contract DssRwaEsSettler {
         dsr = ONE;
     }
 
-    // --- Savings Rate Accumulation ---
+    // --- Stability Fee Accumulation ---
     function drip() external returns (uint tmp) {
         require(block.timestamp >= rho, "Pot/invalid-now");
-        tmp = rmul(rpow(dsr, block.timestamp - rho, ONE), chi);
-        uint chi_ = sub(tmp, chi);
-        chi = tmp;
+        tmp = rmul(rpow(duty, block.timestamp - rho, ONE), rate);
+        uint rate_ = sub(tmp, rate;
+        rate = tmp;
         rho = block.timestamp;
-        vat.suck(address(vow), address(this), mul(Pie, chi_));
+        // vat.suck(address(vow), address(this), mul(art, rate_));
     }
 
-    // --- Savings Dai Management ---
+    // --- Loan Management ---
+    function repay(uint wad) public {
+        sta.transferFrom(wad, address(this));
+        
+        dart = toInt(dai / rate);
+        // Checks the calculated dart is not higher than urn.art (total debt), otherwise uses its value
+        dart = uint(dart) <= art ? - dart : - toInt(art);
+        art = art + dart;
+    }
+
+
+    // --- RWA Token Redemption ---
     function join(uint wad) external {
         require(block.timestamp == rho, "Pot/rho-not-updated");
         pie[msg.sender] = add(pie[msg.sender], wad);
         Pie             = add(Pie,             wad);
-        vat.move(msg.sender, address(this), mul(chi, wad));
+    //    vat.move(msg.sender, address(this), mul(chi, wad));
     }
 
     function exit(uint wad) external {
         pie[msg.sender] = sub(pie[msg.sender], wad);
         Pie             = sub(Pie,             wad);
-        vat.move(address(this), msg.sender, mul(chi, wad));
+        // vat.move(address(this), msg.sender, mul(chi, wad));
+        // move Dai from this contract to msg sender
     }
 }
 
