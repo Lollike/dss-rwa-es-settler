@@ -36,9 +36,11 @@ contract DssRwaEsSettler {
     }
 
     // --- Data ---
-    mapping (address => uint256) public rwaBalance  // RWA Balances
+    mapping (address => uint256) public rwaBalance;  // RWA Balances
+    mapping (address => uint256) public redeemedStablecoin; //redeemed stablecoin
     uint256 public immutable initialArt;
     uint256 public immutable initialInk;
+    uint256 public repaidStablecoin;   // Normalized Debt [wad]
     uint256 public art;   // Normalized Debt [wad]
     uint256 public duty;  // Collateral-specific, per-second stability fee contribution [ray]
     uint256 public rate;  // Accumulated Rates     [ray]
@@ -136,10 +138,15 @@ contract DssRwaEsSettler {
         rho = block.timestamp;
     }
 
+
+    // initial dai amount
+    // dairedeemed[]
+
+
     // --- Loan Management ---
     function repayStablecoin(uint wad) public {
         sta.transferFrom(wad, address(this));
-        
+        repaidStablecoin = repaidStablecoin + wad;
         dart = toInt(wad*RAY/rate);
         // Checks the calculated dart is not higher than urn.art (total debt), otherwise uses its value
         dart = uint(dart) <= art ? - dart : - toInt(art);
@@ -152,15 +159,15 @@ contract DssRwaEsSettler {
         rwaBalances[msg.sender] = add(rwaBalances[msg.sender], wad);
     }
 
-    function exitRwa(uint wad) external {
+    function redeemRwa(uint wad) external {
         rwaBalances[msg.sender] = sub(rwaBalances[msg.sender], wad);
         rwa.transfer(msg.sender, wad);
     }
 
     function exitStablecoin() external {
         rwaFraction = rwaBalances[msg.sender]/initialInk;
-        stablecoinAmount = rwaFraction*art*rate;
-        redeemedStablecoin[msg.sender] = 
+        stablecoinAmount = rwaFraction*repaidStablecoin - redeemedStablecoin[msg.sender];
+        redeemedStablecoin[msg.sender] = redeemedStablecoin[msg.sender]+stablecoinAmount;
 
         //Pie             = sub(Pie,             wad);
         sta.transfer(msg.sender, stablecoinAmount);
@@ -169,3 +176,10 @@ contract DssRwaEsSettler {
     }
 }
 
+
+// 10 % of tokens should give me 10 % of repaid stablecoins
+// calcualte how many stablecoins I can redeem
+// 10 % share of repaid tokens. 15 % has been repaid
+// 0.1*0.15 redeemed
+// share = joinedRwa/totalInk
+// redeemed share = 
