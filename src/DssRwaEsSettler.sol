@@ -153,17 +153,17 @@ contract DssRwaEsSettler {
     }
 
     function exitRwa(uint wad) external {
-        rwa.transferFrom(wad, address(this));
-        rwaBalances[msg.sender] = add(rwaBalances[msg.sender], wad);
+        rwaBalances[msg.sender] = sub(rwaBalances[msg.sender], wad);
+        rwa.transfer(msg.sender, wad);
     }
 
     function exitStablecoin() external {
         rwaFraction = rwaBalances[msg.sender]/initialInk;
-        rwaBalances[msg.sender] = sub(rwaBalances[msg.sender], wad);
         stablecoinAmount = rwaFraction*art*rate;
+        redeemedStablecoin[msg.sender] = 
 
         //Pie             = sub(Pie,             wad);
-        sta.transfer(msg.sender, stablecoinAmount;
+        sta.transfer(msg.sender, stablecoinAmount);
         // vat.move(address(this), msg.sender, mul(chi, wad));
         // move Dai from this contract to msg sender
     }
