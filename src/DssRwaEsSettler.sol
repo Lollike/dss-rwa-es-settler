@@ -19,13 +19,10 @@
 
 pragma solidity 0.8.10;
 
-interface VatLike {
-    function move(address,address,uint256) external;
-    function suck(address,address,uint256) external;
-}
-
 interface GemLike {
-
+    function decimals() external view returns (uint);
+    function transfer(address,uint) external returns (bool);
+    function transferFrom(address,address,uint) external returns (bool);
 }
 
 contract DssRwaEsSettler {
@@ -39,8 +36,9 @@ contract DssRwaEsSettler {
     }
 
     // --- Data ---
-    mapping (address => uint256) public pie;  // Normalised Savings Dai [wad]
-
+    mapping (address => uint256) public rwaBalance  // RWA Balances
+    uint256 public immutable initialArt;
+    uint256 public immutable initialInk;
     uint256 public art;   // Normalized Debt [wad]
     uint256 public duty;  // Collateral-specific, per-second stability fee contribution [ray]
     uint256 public rate;  // Accumulated Rates     [ray]
@@ -56,6 +54,7 @@ contract DssRwaEsSettler {
     constructor(uint256 _art, uint _duty GemLike _rwa, GemLike _sta) {
         wards[msg.sender] = 1;
         art = _art;
+        initialArt = _art;
         duty = _duty;
         rate = ONE;
         rho = block.timestamp;
@@ -65,6 +64,8 @@ contract DssRwaEsSettler {
     }
 
     // --- Math ---
+    uint256 constant RAY = 10 ** 27;
+
     uint256 constant ONE = 10 ** 27;
     function rpow(uint x, uint n, uint base) internal pure returns (uint z) {
         assembly {
@@ -108,54 +109,61 @@ contract DssRwaEsSettler {
 
     // --- Administration ---
     function file(bytes32 what, uint256 data) external auth {
-        require(live == 1, "Pot/not-live");
-        require(block.timestamp == rho, "Pot/rho-not-updated");
-        if (what == "dsr") dsr = data;
-        else revert("Pot/file-unrecognized-param");
+        require(live == 1, "RwaEsSettler/not-live");
+        require(block.timestamp == rho, "RwaEsSettler/rho-not-updated");
+        if (what == "duty") duty = data;
+        else if (what == "art") art = data;
+        else revert("RwaEsSettler/file-unrecognized-param");
     }
 
     function file(bytes32 what, address addr) external auth {
-    //    if (what == "vow") vow = addr;
-    //    else revert("Pot/file-unrecognized-param");
+        if (what == "sta") sta = addr;
+        else if (what == "rwa") rwa = addr;
+        else revert("RwaEsSettler/file-unrecognized-param");
     }
 
     function cage() external auth {
         live = 0;
-        dsr = ONE;
+        duty = ONE;
     }
 
     // --- Stability Fee Accumulation ---
     function drip() external returns (uint tmp) {
-        require(block.timestamp >= rho, "Pot/invalid-now");
+        require(block.timestamp >= rho, "RwaEsSettler//invalid-now");
         tmp = rmul(rpow(duty, block.timestamp - rho, ONE), rate);
         uint rate_ = sub(tmp, rate;
         rate = tmp;
         rho = block.timestamp;
-        // vat.suck(address(vow), address(this), mul(art, rate_));
     }
 
     // --- Loan Management ---
-    function repay(uint wad) public {
+    function repayStablecoin(uint wad) public {
         sta.transferFrom(wad, address(this));
         
-        dart = toInt(dai / rate);
+        dart = toInt(wad*RAY/rate);
         // Checks the calculated dart is not higher than urn.art (total debt), otherwise uses its value
         dart = uint(dart) <= art ? - dart : - toInt(art);
         art = art + dart;
     }
 
-
     // --- RWA Token Redemption ---
-    function join(uint wad) external {
-        require(block.timestamp == rho, "Pot/rho-not-updated");
-        pie[msg.sender] = add(pie[msg.sender], wad);
-        Pie             = add(Pie,             wad);
-    //    vat.move(msg.sender, address(this), mul(chi, wad));
+    function joinRwa(uint wad) external {
+        rwa.transferFrom(wad, address(this));
+        rwaBalances[msg.sender] = add(rwaBalances[msg.sender], wad);
     }
 
-    function exit(uint wad) external {
-        pie[msg.sender] = sub(pie[msg.sender], wad);
-        Pie             = sub(Pie,             wad);
+    function exitRwa(uint wad) external {
+        rwa.transferFrom(wad, address(this));
+        rwaBalances[msg.sender] = add(rwaBalances[msg.sender], wad);
+    }
+
+    function exitStablecoin() external {
+        rwaFraction = rwaBalances[msg.sender]/initialInk;
+        rwaBalances[msg.sender] = sub(rwaBalances[msg.sender], wad);
+        stablecoinAmount = rwaFraction*art*rate;
+
+        //Pie             = sub(Pie,             wad);
+        sta.transfer(msg.sender, stablecoinAmount;
         // vat.move(address(this), msg.sender, mul(chi, wad));
         // move Dai from this contract to msg sender
     }
