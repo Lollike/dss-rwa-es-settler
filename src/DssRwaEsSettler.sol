@@ -38,10 +38,10 @@ contract DssRwaEsSettler {
     // --- Data ---
     mapping (address => uint256) public rwaBalance;  // RWA Balances
     mapping (address => uint256) public redeemedStablecoin; //redeemed stablecoin
-    uint256 public immutable initialArt;
+    int256 public immutable initialArt;
     uint256 public immutable initialInk;
     uint256 public repaidStablecoin;   // Normalized Debt [wad]
-    uint256 public art;   // Normalized Debt [wad]
+    int256 public art;   // Normalized Debt [wad]
     uint256 public duty;  // Collateral-specific, per-second stability fee contribution [ray]
     uint256 public rate;  // Accumulated Rates     [ray]
     uint256 public rho;   // Time of last drip     [unix epoch time]
@@ -53,11 +53,12 @@ contract DssRwaEsSettler {
     
 
     // --- Init ---
-    constructor(uint256 _art, uint _duty GemLike _rwa, GemLike _sta) {
+    constructor(int256 _art, uint256 _duty, uint256 _initialInk, GemLike _rwa, GemLike _sta) {
         wards[msg.sender] = 1;
         art = _art;
         initialArt = _art;
         duty = _duty;
+        initialInk = _initialInk;
         rate = ONE;
         rho = block.timestamp;
         live = 1;
@@ -108,19 +109,16 @@ contract DssRwaEsSettler {
     function mul(uint x, uint y) internal pure returns (uint z) {
         require(y == 0 || (z = x * y) / y == x);
     }
+    function toInt(uint x) internal pure returns (int y) {
+        y = int(x);
+        require(y >= 0, "int-overflow");
+    }
 
     // --- Administration ---
     function file(bytes32 what, uint256 data) external auth {
         require(live == 1, "RwaEsSettler/not-live");
         require(block.timestamp == rho, "RwaEsSettler/rho-not-updated");
         if (what == "duty") duty = data;
-        else if (what == "art") art = data;
-        else revert("RwaEsSettler/file-unrecognized-param");
-    }
-
-    function file(bytes32 what, address addr) external auth {
-        if (what == "sta") sta = addr;
-        else if (what == "rwa") rwa = addr;
         else revert("RwaEsSettler/file-unrecognized-param");
     }
 
@@ -133,7 +131,7 @@ contract DssRwaEsSettler {
     function drip() external returns (uint tmp) {
         require(block.timestamp >= rho, "RwaEsSettler//invalid-now");
         tmp = rmul(rpow(duty, block.timestamp - rho, ONE), rate);
-        uint rate_ = sub(tmp, rate;
+        uint rate_ = sub(tmp, rate);
         rate = tmp;
         rho = block.timestamp;
     }
@@ -145,28 +143,27 @@ contract DssRwaEsSettler {
 
     // --- Loan Management ---
     function repayStablecoin(uint wad) public {
-        sta.transferFrom(wad, address(this));
+        sta.transferFrom(msg.sender, address(this), wad);
         repaidStablecoin = repaidStablecoin + wad;
-        dart = toInt(wad*RAY/rate);
-        // Checks the calculated dart is not higher than urn.art (total debt), otherwise uses its value
-        dart = uint(dart) <= art ? - dart : - toInt(art);
+        int256 dart = toInt(wad*RAY/rate);
         art = art + dart;
     }
 
     // --- RWA Token Redemption ---
     function joinRwa(uint wad) external {
-        rwa.transferFrom(wad, address(this));
-        rwaBalances[msg.sender] = add(rwaBalances[msg.sender], wad);
+        rwa.transferFrom(msg.sender, address(this), wad);
+        rwaBalance[msg.sender] = add(rwaBalance[msg.sender], wad);
     }
 
     function redeemRwa(uint wad) external {
-        rwaBalances[msg.sender] = sub(rwaBalances[msg.sender], wad);
+        
+        rwaBalance[msg.sender] = sub(rwaBalance[msg.sender], wad);
         rwa.transfer(msg.sender, wad);
     }
 
     function exitStablecoin() external {
-        rwaFraction = rwaBalances[msg.sender]/initialInk;
-        stablecoinAmount = rwaFraction*repaidStablecoin - redeemedStablecoin[msg.sender];
+        uint256 rwaFraction = rwaBalance[msg.sender]/initialInk;
+        uint256 stablecoinAmount = rwaFraction*repaidStablecoin - redeemedStablecoin[msg.sender];
         redeemedStablecoin[msg.sender] = redeemedStablecoin[msg.sender]+stablecoinAmount;
 
         //Pie             = sub(Pie,             wad);
